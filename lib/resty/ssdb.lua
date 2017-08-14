@@ -13,33 +13,63 @@ local pairs = pairs
 local unpack = unpack
 local setmetatable = setmetatable
 local tonumber = tonumber
+local rawget = rawget
 local error = error
 local gmatch = string.gmatch
 local remove = table.remove
 
 
-module(...)
+local ok, new_tab = pcall(require, "table.new")
+if not ok or type(new_tab) ~= "function" then
+    new_tab = function (narr, nrec) return {} end
+end
 
-_VERSION = '0.02'
+
+local _M = new_tab(0, 128)
+
+_M._VERSION = '0.03'
 
 local commands = {
-    "set",                  "get",                 "del",
-    "scan",                 "rscan",               "keys",
-    "incr",                 "decr",                "exists",
-    "multi_set",            "multi_get",           "multi_del",
-    "multi_exists",         "auth",
+    -- Server
+    "auth",                 "dbsize",              "flushdb",
+    "info",
+
+    -- Key Value
+    "set",                  "setx",                "setnx",
+    "expire",               "ttl",                 "get",
+    "getset",               "del",                 "incr",
+    "exists",               "getbit",              "setbit",
+    "bitcount",             "countbit",            "substr",
+    "strlen",               "keys",                "rkeys",
+    "scan",                 "rscan",               "multi_set",
+    "multi_get",            "multi_del",
+
+    -- hashmap
     "hset",                 "hget",                "hdel",
-    "hscan",                "hrscan",              "hkeys",
-    "hincr",                "hdecr",               "hexists",
-    "hsize",                "hlist",
-    --[[ "multi_hset", ]]   "multi_hget",          "multi_hdel",
-    "multi_hexists",        "multi_hsize",
+    "hincr",                "hexists",             "hsize",
+    "hlist",                "hrlist",              "hkeys",
+    "hgetall",              "hscan",               "hrscan",
+    "hclear",               --[[ "multi_hset", ]]  "multi_hget",
+    "multi_hdel",
+
+    -- Sorted Set
     "zset",                 "zget",                "zdel",
-    "zscan",                "zrscan",              "zkeys",
-    "zincr",                "zdecr",               "zexists",
-    "zsize",                "zlist",
-    --[[ "multi_zset", ]]   "multi_zget",          "multi_zdel",
-    "multi_zexists",        "multi_zsize"
+    "zincr",                "zexists",             "zsize",
+    "zlist",                "zrlist",              "zkeys",
+    "zscan",                "zrscan",              "zrank",
+    "zrrank",               "zrange",              "zrrange",
+    "zclear",               "zcount",              "zsum",
+    "zavg",                 "zremrangebyrank",     "zremrangebyscore",
+    "zpop_front",           "zpop_back",           --[[ "multi_zset"]]
+    "multi_zget",           "multi_zdel",
+
+    -- List
+    "qpush_front",          "qpush_back",          "qpop_front",
+    "qpop_back",            "qpush",               "qpop",
+    "qfront",               "qback",               "qsize",
+    "qclear",               "qget",                "qset",
+    "qrange",               "qslice",              "qtrim_front",
+    "qtrim_back",           "qlist",               "qrlist"
 
 }
 
@@ -47,7 +77,7 @@ local commands = {
 local mt = { __index = _M }
 
 
-function new(self)
+function _M.new(self)
     local sock, err = tcp()
     if not sock then
         return nil, err
@@ -56,7 +86,7 @@ function new(self)
 end
 
 
-function set_timeout(self, timeout)
+function _M.set_timeout(self, timeout)
     local sock = self.sock
     if not sock then
         return nil, "not initialized"
@@ -66,7 +96,7 @@ function set_timeout(self, timeout)
 end
 
 
-function set_keepalive(self, ...)
+function _M.set_keepalive(self, ...)
     local sock = self.sock
     if not sock then
         return nil, "not initialized"
@@ -76,7 +106,7 @@ function set_keepalive(self, ...)
 end
 
 
-function get_reused_times(self)
+function _M.get_reused_times(self)
     local sock = self.sock
     if not sock then
         return nil, "not initialized"
@@ -94,33 +124,38 @@ function close(self)
 
     return sock:close()
 end
+_M.close = close
 
 
-local function _read_reply(sock)
-	local val = {}
+local function _read_reply(self, sock)
+    local val = {}
     local ret = nil
 
-	while true do
-		-- read block size
-		local line, err, partial = sock:receive()
-		if not line or len(line)==0 then
-			-- packet end
-			break
-		end
-		local d_len = tonumber(line)
+    while true do
+        -- read block size
+        local line, err, partial = sock:receive()
+        if not line or len(line)==0 then
+            -- packet end
+            break
+        end
+        local d_len = tonumber(line)
 
-		-- read block data
-		local data, err = sock:receive(d_len)
+        -- read block data
+        local data, err = sock:receive(d_len)
         if not data then
             return nil, err
         end
-		insert(val, data)
+        insert(val, data)
 
-		local dummy, err = sock:receive(1) -- ignore LF
+        local dummy, err = sock:receive(1) -- ignore LF
         if not dummy then
             return nil, err
         end
-	end
+    end
+
+    for index, v in pairs(val) do
+        ngx.log(ngx.ERR, index .. ":" .. v)
+    end
 
     if val[1] == 'not_found' then
         ret = null
@@ -159,14 +194,17 @@ end
 local function _do_cmd(self, ...)
     local args = {...}
 
-    local sock = self.sock
+    local sock = rawget(self, "sock")
     if not sock then
         return nil, "not initialized"
     end
 
     local req = _gen_req(args)
 
-    local reqs = self._reqs
+    local reqs = rawget(self, "_reqs")
+
+    local t1 = self._t1
+
     if reqs then
         insert(reqs, req)
         return
@@ -177,8 +215,10 @@ local function _do_cmd(self, ...)
         return nil, err
     end
 
-    return  _read_reply(sock)
+    return  _read_reply(self, sock)
 end
+
+
 
 
 for i = 1, #commands do
@@ -190,7 +230,7 @@ for i = 1, #commands do
         end
 end
 
-function connect(self, host, port, auth, ...)
+function _M.connect(self, host, port, auth, ...)
     local sock = self.sock
     if not sock then
         return nil, "not initialized"
@@ -215,7 +255,7 @@ function connect(self, host, port, auth, ...)
 end
 
 
-function multi_hset(self, hashname, ...)
+function _M.multi_hset(self, hashname, ...)
     local args = {...}
     if #args == 1 then
         local t = args[1]
@@ -233,7 +273,7 @@ function multi_hset(self, hashname, ...)
 end
 
 
-function multi_zset(self, keyname, ...)
+function _M.multi_zset(self, keyname, ...)
     local args = {...}
     if #args == 1 then
         local t = args[1]
@@ -251,17 +291,17 @@ function multi_zset(self, keyname, ...)
 end
 
 
-function init_pipeline(self)
+function _M.init_pipeline(self)
     self._reqs = {}
 end
 
 
-function cancel_pipeline(self)
+function _M.cancel_pipeline(self)
     self._reqs = nil
 end
 
 
-function commit_pipeline(self)
+function _M.commit_pipeline(self)
     local reqs = self._reqs
     if not reqs then
         return nil, "no pipeline"
@@ -297,7 +337,7 @@ function commit_pipeline(self)
 end
 
 
-function array_to_hash(self, t)
+function _M.array_to_hash(self, t)
     local h = {}
     for i = 1, #t, 2 do
         h[t[i]] = t[i + 1]
@@ -306,18 +346,8 @@ function array_to_hash(self, t)
 end
 
 
-local class_mt = {
-    -- to prevent use of casual module global variables
-    __newindex = function (table, key, val)
-        error('attempt to write to undeclared variable "' .. key .. '"')
-    end
-}
-
-
-function add_commands(...)
+function _M.add_commands(...)
     local cmds = {...}
-    local newindex = class_mt.__newindex
-    class_mt.__newindex = nil
     for i = 1, #cmds do
         local cmd = cmds[i]
         _M[cmd] =
@@ -325,8 +355,20 @@ function add_commands(...)
                 return _do_cmd(self, cmd, ...)
             end
     end
-    class_mt.__newindex = newindex
 end
 
 
-setmetatable(_M, class_mt)
+setmetatable(_M, {__index = function(self, cmd)
+                      local method =
+                          function (self, ...)
+                              return _do_cmd(self, cmd, ...)
+                          end
+
+                      -- cache the lazily generated method in our
+                      -- module table
+                      _M[cmd] = method
+                      return method
+end})
+
+
+return _M
