@@ -206,7 +206,11 @@ local function parse_response(cmd, resp)
     elseif has_value(int_resp_cmds, cmd) or has_value(float_resp_cmds, cmd) then
         ret = tonumber(resp[2])
     elseif has_value(bool_resp_cmds, cmd) then
-        ret = not not resp[2]
+        if resp[2] == "0" then
+            ret = false
+        else
+            ret = true
+        end
     elseif has_value(order_dict_resp_cmds, cmd) then
         ret = {}
         for i = 2, #resp, 2 do

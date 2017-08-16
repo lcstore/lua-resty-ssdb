@@ -854,3 +854,50 @@ failed to connect: connection refused
 --- timeout: 3
 --- no_error_log
 [alert]
+
+
+
+=== TEST 16: hexists
+--- http_config eval: $::HttpConfig
+--- config
+    location /t {
+        content_by_lua '
+            local ssdb = require "resty.ssdb"
+            local db = ssdb:new()
+            local cjson = require "cjson"
+
+            db:set_timeout(1000) -- 1 sec
+
+            local ok, err = db:connect("127.0.0.1", $TEST_NGINX_SSDB_PORT)
+            if not ok then
+                ngx.say("failed to connect: ", err)
+                return
+            end
+
+            ok, err = db:flushdb()
+            if not ok then
+                ngx.say("failed to flush all: ", err)
+                return
+            end
+
+            local res, err = db:hexists("animals", "dog")
+            ngx.say("hexists animals dog: ", res)
+
+            local res, err = db:multi_hset("animals", { dog = "bark", cat = "meow", cow = "moo" })
+            if not res then
+                ngx.say("failed to set animals: ", err)
+                return
+            end
+            local res, err = db:hexists("animals", "dog")
+            ngx.say("hexists animals dog: ", cjson.encode(res))
+
+            db:close()
+        ';
+    }
+--- request
+GET /t
+--- response_body
+hexists animals dog: false
+hexists animals dog: true
+--- no_error_log
+[error]
