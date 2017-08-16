@@ -1,3 +1,4 @@
+-- Copyright (C) 2017 Risent Zhang (risent.net)
 -- Copyright (C) 2013 LazyZhu (lazyzhu.com)
 -- Copyright (C) 2013 IdeaWu (ideawu.com)
 -- Copyright (C) 2012 Yichun Zhang (agentzh)
@@ -32,11 +33,11 @@ function split(s, delimiter)
     local from = 1
     local delim_from, delim_to = string.find(s, delimiter, from)
     while delim_from do
-        table.insert(result, string.sub(s, from, delim_from - 1))
+        insert(result, string.sub(s, from, delim_from - 1))
         from = delim_to + 1
         delim_from, delim_to = string.find(s, delimiter, from)
     end
-    table.insert(result, string.sub(s, from))
+    insert(result, string.sub(s, from))
     return result
 end
 
@@ -103,6 +104,10 @@ local commands = {
 
 
 -- START command groups
+--[[ command group info from python ssdb:
+https://github.com/wrongwaycn/ssdb-py/blob/ce7b1542f0faa06fe71a60c667fe15992af0f621/ssdb/client.py#L132-L183
+--]]
+
 -- response: 1
 local bool_resp_cmds = {'set', 'setnx', 'del', 'exists', 'expire', 'setbit',
                         'getbit', 'hset', 'hdel', 'hexists', 'zset', 'zdel',
@@ -219,19 +224,19 @@ local function parse_response(cmd, resp)
         for i = 2, #resp, 2 do
             local t = {}
             t[resp[i]]=resp[i+1]
-            table.insert(ret, t)
+            insert(ret, t)
         end
     elseif has_value(int_order_dict_resp_cmds, cmd) then
         ret = {}
         for i = 2, #resp, 2 do
             local t = {}
             t[resp[i]]=tonumber(resp[i+1])
-            table.insert(ret, t)
+            insert(ret, t)
         end
     elseif has_value(raw_all_resp_cmds, cmd) then
         ret = {}
         for i = 2, #resp do
-            table.insert(ret, resp[i])
+            insert(ret, resp[i])
         end
     elseif has_value(true_resp_cmds, cmd) then
         ret = true
