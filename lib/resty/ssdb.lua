@@ -4,7 +4,7 @@
 -- Copyright (C) 2012 Yichun Zhang (agentzh)
 
 
-local sub = string.sub
+-- local sub = string.sub
 local tcp = ngx.socket.tcp
 local insert = table.insert
 local concat = table.concat
@@ -16,9 +16,9 @@ local setmetatable = setmetatable
 local tonumber = tonumber
 local tostring = tostring
 local rawget = rawget
-local error = error
-local gmatch = string.gmatch
-local remove = table.remove
+-- local error = error
+-- local gmatch = string.gmatch
+-- local remove = table.remove
 
 
 local ok, new_tab = pcall(require, "table.new")
@@ -27,25 +27,9 @@ if not ok or type(new_tab) ~= "function" then
 end
 
 
--- string split
--- can be replace by `ngx.re.split` in `nginx-lua-module==0.12`
-function split(s, delimiter)
-    local result = {}
-    local from = 1
-    local delim_from, delim_to = string.find(s, delimiter, from)
-    while delim_from do
-        insert(result, string.sub(s, from, delim_from - 1))
-        from = delim_to + 1
-        delim_from, delim_to = string.find(s, delimiter, from)
-    end
-    insert(result, string.sub(s, from))
-    return result
-end
-
-
 -- check if *val* in *tab*
-function has_value (tab, val)
-    for index, value in ipairs (tab) do
+local function has_value (tab, val)
+    for _, value in ipairs (tab) do
         if value == val then
             return true
         end
@@ -247,6 +231,8 @@ local function parse_response(cmd, resp)
         end
     elseif has_value(true_resp_cmds, cmd) then
         ret = true
+    elseif has_value(raw_resp_cmds, cmd) then
+        ret = resp[2]
     else
         ret = resp[2]
     end
@@ -258,7 +244,7 @@ end
 local function _read_reply(self, sock, ...)
     local args = {...}
     local val = {}
-    local ret = nil
+    local ret
     local cmd = args[1]
 
     while true do
@@ -313,7 +299,7 @@ local function _gen_req(args)
             insert(req, arg)
             insert(req, "\n")
         else
-            return nil, err
+            return nil
         end
     end
     insert(req, "\n")
@@ -335,8 +321,6 @@ local function _do_cmd(self, ...)
     local req = _gen_req(args)
 
     local reqs = rawget(self, "_reqs")
-
-    local t1 = self._t1
 
     if reqs then
         insert(reqs, req)
