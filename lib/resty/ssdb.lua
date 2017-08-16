@@ -4,7 +4,7 @@
 -- Copyright (C) 2012 Yichun Zhang (agentzh)
 
 
--- local sub = string.sub
+local sub = string.sub
 local tcp = ngx.socket.tcp
 local insert = table.insert
 local concat = table.concat
@@ -323,11 +323,14 @@ local function _do_cmd(self, ...)
     end
 
     local req = _gen_req(args)
+    local cmd = args[1]
 
     local reqs = rawget(self, "_reqs")
+    local cmds = rawget(self, "_cmds")
 
     if reqs then
         insert(reqs, req)
+        insert(cmds, cmd)
         return
     end
 
@@ -336,7 +339,7 @@ local function _do_cmd(self, ...)
         return nil, err
     end
 
-    return  _read_reply(self, sock, args[1])
+    return  _read_reply(self, sock, cmd)
 end
 
 
@@ -413,17 +416,20 @@ end
 
 
 function _M.init_pipeline(self)
-    self._reqs = {}
+    self._reqs = new_tab(n or 4, 0)
+    self._cmds = new_tab(n or 4, 0)
 end
 
 
 function _M.cancel_pipeline(self)
     self._reqs = nil
+    self._cmds = nil
 end
 
 
 function _M.commit_pipeline(self)
     local reqs = self._reqs
+    local cmds = self._cmds
     if not reqs then
         return nil, "no pipeline"
     end
@@ -442,7 +448,8 @@ function _M.commit_pipeline(self)
 
     local vals = {}
     for i = 1, #reqs do
-        local res, err = _read_reply(self, sock)
+        local cmd = cmds[i]
+        local res, err = _read_reply(self, sock, cmd)
         if res then
             insert(vals, res)
 
