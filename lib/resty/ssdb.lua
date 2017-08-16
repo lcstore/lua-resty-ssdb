@@ -1,9 +1,10 @@
+-- Copyright (C) 2017 Risent Zhang (risent.net)
 -- Copyright (C) 2013 LazyZhu (lazyzhu.com)
 -- Copyright (C) 2013 IdeaWu (ideawu.com)
 -- Copyright (C) 2012 Yichun Zhang (agentzh)
 
 
-local sub = string.sub
+-- local sub = string.sub
 local tcp = ngx.socket.tcp
 local insert = table.insert
 local concat = table.concat
@@ -13,41 +14,130 @@ local pairs = pairs
 local unpack = unpack
 local setmetatable = setmetatable
 local tonumber = tonumber
-local error = error
-local gmatch = string.gmatch
-local remove = table.remove
+local tostring = tostring
+local rawget = rawget
+-- local error = error
+-- local gmatch = string.gmatch
+-- local remove = table.remove
 
 
-module(...)
+local ok, new_tab = pcall(require, "table.new")
+if not ok or type(new_tab) ~= "function" then
+    new_tab = function (narr, nrec) return {} end
+end
 
-_VERSION = '0.02'
+
+-- check if *val* in *tab*
+local function has_value (tab, val)
+    for _, value in ipairs (tab) do
+        if value == val then
+            return true
+        end
+    end
+    return false
+end
+
+
+local _M = new_tab(0, 128)
+
+_M._VERSION = '0.03'
+
 
 local commands = {
-    "set",                  "get",                 "del",
-    "scan",                 "rscan",               "keys",
-    "incr",                 "decr",                "exists",
-    "multi_set",            "multi_get",           "multi_del",
-    "multi_exists",         "auth",
+    -- Server
+    "auth",                 "dbsize",              "flushdb",
+    "info",
+
+    -- Key Value
+    "set",                  "setx",                "setnx",
+    "expire",               "ttl",                 "get",
+    "getset",               "del",                 "incr",
+    "exists",               "getbit",              "setbit",
+    "bitcount",             "countbit",            "substr",
+    "strlen",               "keys",                "rkeys",
+    "scan",                 "rscan",               "multi_set",
+    "multi_get",            "multi_del",
+
+    -- hashmap
     "hset",                 "hget",                "hdel",
-    "hscan",                "hrscan",              "hkeys",
-    "hincr",                "hdecr",               "hexists",
-    "hsize",                "hlist",
-    --[[ "multi_hset", ]]   "multi_hget",          "multi_hdel",
-    "multi_hexists",        "multi_hsize",
+    "hincr",                "hexists",             "hsize",
+    "hlist",                "hrlist",              "hkeys",
+    "hgetall",              "hscan",               "hrscan",
+    "hclear",               --[[ "multi_hset", ]]  "multi_hget",
+    "multi_hdel",
+
+    -- Sorted Set
     "zset",                 "zget",                "zdel",
-    "zscan",                "zrscan",              "zkeys",
-    "zincr",                "zdecr",               "zexists",
-    "zsize",                "zlist",
-    --[[ "multi_zset", ]]   "multi_zget",          "multi_zdel",
-    "multi_zexists",        "multi_zsize"
+    "zincr",                "zexists",             "zsize",
+    "zlist",                "zrlist",              "zkeys",
+    "zscan",                "zrscan",              "zrank",
+    "zrrank",               "zrange",              "zrrange",
+    "zclear",               "zcount",              "zsum",
+    "zavg",                 "zremrangebyrank",     "zremrangebyscore",
+    "zpop_front",           "zpop_back",           --[[ "multi_zset"]]
+    "multi_zget",           "multi_zdel",
+
+    -- List
+    "qpush_front",          "qpush_back",          "qpop_front",
+    "qpop_back",            "qpush",               "qpop",
+    "qfront",               "qback",               "qsize",
+    "qclear",               "qget",                "qset",
+    "qrange",               "qslice",              "qtrim_front",
+    "qtrim_back",           "qlist",               "qrlist"
 
 }
+
+
+-- START command groups
+--[[ command group info from python ssdb:
+https://github.com/wrongwaycn/ssdb-py/blob/ce7b1542f0faa06fe71a60c667fe15992af0f621/ssdb/client.py#L132-L183
+--]]
+
+-- response: 1
+local bool_resp_cmds = {'set', 'setnx', 'del', 'exists', 'expire', 'setbit',
+                        'getbit', 'hset', 'hdel', 'hexists', 'zset', 'zdel',
+                        'zexists'}
+
+-- response string
+local raw_resp_cmds = {'get', 'hget', 'getset', 'substr', 'qfront', 'qback', 'qget'}
+
+-- response int
+local int_resp_cmds = {'incr', 'decr', 'multi_set', 'multi_del', 'ttl', 'countbit',
+                       'strlen', 'hincr', 'hdecr', 'hsize', 'hclear', 'multi_hset',
+                       'multi_hdel', 'zincr', 'zdecr', 'zsize', 'zclear', 'multi_zset',
+                       'multi_zdel', 'zget', 'zrank', 'zrrank', 'zcount', 'zsum',
+                       'zavg', 'zremrangebyrank', 'zremrangebyscore', 'qsize',
+                       'qclear', 'qpush_back', 'qpush_front', 'qtrim_back',
+                       'qtrim_front'}
+
+-- response float
+local float_resp_cmds = {"zavg"}
+
+-- response table: >>{"k1":"1","k2":"2"}
+local dict_resp_cmds = {'multi_get', 'multi_hget', 'hgetall', 'multi_zget'}
+
+-- reponse array: >>[{"k1":"v1"},{"k2":"v2"}]
+local order_dict_resp_cmds = {'scan', 'rscan', 'hscan', 'hrscan'}
+
+-- response array: >>[{"k1":1},{"k2":2},{"k3":3}]
+local int_order_dict_resp_cmds = {'zscan', 'zrscan', 'zrange', 'zrrange'}
+
+-- response table: >>{"k1":"1","k2":"2"}
+local int_dict_resp_cmds = {"multi_zget"}
+
+local raw_all_resp_cmds = {'keys', 'hkeys', 'hlist', 'hrlist', 'zkeys', 'zlist',
+                           'zrlist', 'qlist', 'qrlist', 'qrange', 'qslice',
+                           'qpop_back', 'qpop_front'}
+
+local true_resp_cmds = {"qset"} -- always true
+
+-- END command groups --
 
 
 local mt = { __index = _M }
 
 
-function new(self)
+function _M.new(self)
     local sock, err = tcp()
     if not sock then
         return nil, err
@@ -56,7 +146,7 @@ function new(self)
 end
 
 
-function set_timeout(self, timeout)
+function _M.set_timeout(self, timeout)
     local sock = self.sock
     if not sock then
         return nil, "not initialized"
@@ -66,7 +156,7 @@ function set_timeout(self, timeout)
 end
 
 
-function set_keepalive(self, ...)
+function _M.set_keepalive(self, ...)
     local sock = self.sock
     if not sock then
         return nil, "not initialized"
@@ -76,7 +166,7 @@ function set_keepalive(self, ...)
 end
 
 
-function get_reused_times(self)
+function _M.get_reused_times(self)
     local sock = self.sock
     if not sock then
         return nil, "not initialized"
@@ -86,7 +176,7 @@ function get_reused_times(self)
 end
 
 
-function close(self)
+local function close(self)
     local sock = self.sock
     if not sock then
         return nil, "not initialized"
@@ -94,38 +184,98 @@ function close(self)
 
     return sock:close()
 end
+_M.close = close
 
 
-local function _read_reply(sock)
-	local val = {}
-    local ret = nil
+local function parse_response(cmd, resp)
+    local ret
 
-	while true do
-		-- read block size
-		local line, err, partial = sock:receive()
-		if not line or len(line)==0 then
-			-- packet end
-			break
-		end
-		local d_len = tonumber(line)
+    -- ngx.log(ngx.ERR, cmd)
+    if cmd == "flushdb" then
+        ret = true
+    elseif has_value(dict_resp_cmds, cmd) then
+        ret = {}
+        for i = 2, #resp, 2 do
+            ret[resp[i]] = resp[i+1]
+        end
+    elseif has_value(int_dict_resp_cmds, cmd) then
+        ret = {}
+        for i = 2, #resp, 2 do
+            ret[resp[i]] = tonumber(resp[i+1])
+        end
+    elseif has_value(int_resp_cmds, cmd) or has_value(float_resp_cmds, cmd) then
+        ret = tonumber(resp[2])
+    elseif has_value(bool_resp_cmds, cmd) then
+        ret = not not resp[2]
+    elseif has_value(order_dict_resp_cmds, cmd) then
+        ret = {}
+        for i = 2, #resp, 2 do
+            local t = {}
+            t[resp[i]]=resp[i+1]
+            insert(ret, t)
+        end
+    elseif has_value(int_order_dict_resp_cmds, cmd) then
+        ret = {}
+        for i = 2, #resp, 2 do
+            local t = {}
+            t[resp[i]]=tonumber(resp[i+1])
+            insert(ret, t)
+        end
+    elseif has_value(raw_all_resp_cmds, cmd) then
+        -- ngx.log(ngx.ERR, cmd .. "IN RAW ALL RESP")
+        ret = {}
+        if resp ~= nil then
+            for i = 2, #resp do
+                insert(ret, resp[i])
+            end
+        end
+    elseif has_value(true_resp_cmds, cmd) then
+        ret = true
+    elseif has_value(raw_resp_cmds, cmd) then
+        ret = resp[2]
+    else
+        ret = resp[2]
+    end
 
-		-- read block data
-		local data, err = sock:receive(d_len)
+    return ret
+end
+
+
+local function _read_reply(self, sock, ...)
+    local args = {...}
+    local val = {}
+    local ret
+    local cmd = args[1]
+
+    while true do
+        -- read block size
+        local line, err, partial = sock:receive()
+        if not line or len(line)==0 then
+            -- packet end
+            break
+        end
+        local d_len = tonumber(line)
+
+        -- read block data
+        local data, err = sock:receive(d_len)
         if not data then
             return nil, err
         end
-		insert(val, data)
+        insert(val, data)
 
-		local dummy, err = sock:receive(1) -- ignore LF
+        local dummy, err = sock:receive(1) -- ignore LF
         if not dummy then
             return nil, err
         end
-	end
+    end
 
     if val[1] == 'not_found' then
         ret = null
-    elseif val[2] then
-        ret = val[2]
+    elseif val[1] == 'client_error' then
+        return nil, val[2]
+    else
+        ret = parse_response(cmd, val)
+        -- ret = val[2]
     end
 
     return ret
@@ -133,10 +283,15 @@ end
 
 
 local function _gen_req(args)
+    local nargs = #args
     local req = {}
 
-    for i = 1, #args do
+    for i = 1, nargs do
         local arg = args[i]
+
+        if type(arg) ~= "string" then
+            arg = tostring(arg)
+        end
 
         if arg then
             insert(req, len(arg))
@@ -144,7 +299,7 @@ local function _gen_req(args)
             insert(req, arg)
             insert(req, "\n")
         else
-            return nil, err
+            return nil
         end
     end
     insert(req, "\n")
@@ -158,15 +313,15 @@ end
 
 local function _do_cmd(self, ...)
     local args = {...}
-
-    local sock = self.sock
+    local sock = rawget(self, "sock")
     if not sock then
         return nil, "not initialized"
     end
 
     local req = _gen_req(args)
 
-    local reqs = self._reqs
+    local reqs = rawget(self, "_reqs")
+
     if reqs then
         insert(reqs, req)
         return
@@ -177,8 +332,10 @@ local function _do_cmd(self, ...)
         return nil, err
     end
 
-    return  _read_reply(sock)
+    return  _read_reply(self, sock, args[1])
 end
+
+
 
 
 for i = 1, #commands do
@@ -190,7 +347,7 @@ for i = 1, #commands do
         end
 end
 
-function connect(self, host, port, auth, ...)
+function _M.connect(self, host, port, auth, ...)
     local sock = self.sock
     if not sock then
         return nil, "not initialized"
@@ -206,7 +363,7 @@ function connect(self, host, port, auth, ...)
 		if not bytes then
             return nil, err
         end
-		local err = _read_reply(sock)
+		local err = _read_reply(self, sock)
         if err and err ~= '1'  then
 		    return nil, err
 		end
@@ -215,7 +372,7 @@ function connect(self, host, port, auth, ...)
 end
 
 
-function multi_hset(self, hashname, ...)
+function _M.multi_hset(self, hashname, ...)
     local args = {...}
     if #args == 1 then
         local t = args[1]
@@ -233,7 +390,7 @@ function multi_hset(self, hashname, ...)
 end
 
 
-function multi_zset(self, keyname, ...)
+function _M.multi_zset(self, keyname, ...)
     local args = {...}
     if #args == 1 then
         local t = args[1]
@@ -251,17 +408,17 @@ function multi_zset(self, keyname, ...)
 end
 
 
-function init_pipeline(self)
+function _M.init_pipeline(self)
     self._reqs = {}
 end
 
 
-function cancel_pipeline(self)
+function _M.cancel_pipeline(self)
     self._reqs = nil
 end
 
 
-function commit_pipeline(self)
+function _M.commit_pipeline(self)
     local reqs = self._reqs
     if not reqs then
         return nil, "no pipeline"
@@ -281,7 +438,7 @@ function commit_pipeline(self)
 
     local vals = {}
     for i = 1, #reqs do
-        local res, err = _read_reply(sock)
+        local res, err = _read_reply(self, sock)
         if res then
             insert(vals, res)
 
@@ -297,7 +454,7 @@ function commit_pipeline(self)
 end
 
 
-function array_to_hash(self, t)
+function _M.array_to_hash(self, t)
     local h = {}
     for i = 1, #t, 2 do
         h[t[i]] = t[i + 1]
@@ -306,18 +463,8 @@ function array_to_hash(self, t)
 end
 
 
-local class_mt = {
-    -- to prevent use of casual module global variables
-    __newindex = function (table, key, val)
-        error('attempt to write to undeclared variable "' .. key .. '"')
-    end
-}
-
-
-function add_commands(...)
+function _M.add_commands(...)
     local cmds = {...}
-    local newindex = class_mt.__newindex
-    class_mt.__newindex = nil
     for i = 1, #cmds do
         local cmd = cmds[i]
         _M[cmd] =
@@ -325,8 +472,20 @@ function add_commands(...)
                 return _do_cmd(self, cmd, ...)
             end
     end
-    class_mt.__newindex = newindex
 end
 
 
-setmetatable(_M, class_mt)
+setmetatable(_M, {__index = function(self, cmd)
+                      local method =
+                          function (self, ...)
+                              return _do_cmd(self, cmd, ...)
+                          end
+
+                      -- cache the lazily generated method in our
+                      -- module table
+                      _M[cmd] = method
+                      return method
+end})
+
+
+return _M
