@@ -14,6 +14,7 @@ local pairs = pairs
 local unpack = unpack
 local setmetatable = setmetatable
 local tonumber = tonumber
+local tostring = tostring
 local rawget = rawget
 local error = error
 local gmatch = string.gmatch
@@ -205,7 +206,10 @@ _M.close = close
 local function parse_response(cmd, resp)
     local ret
 
-    if has_value(dict_resp_cmds, cmd) then
+    -- ngx.log(ngx.ERR, cmd)
+    if cmd == "flushdb" then
+        ret = true
+    elseif has_value(dict_resp_cmds, cmd) then
         ret = {}
         for i = 2, #resp, 2 do
             ret[resp[i]] = resp[i+1]
@@ -234,9 +238,12 @@ local function parse_response(cmd, resp)
             insert(ret, t)
         end
     elseif has_value(raw_all_resp_cmds, cmd) then
+        -- ngx.log(ngx.ERR, cmd .. "IN RAW ALL RESP")
         ret = {}
-        for i = 2, #resp do
-            insert(ret, resp[i])
+        if resp ~= nil then
+            for i = 2, #resp do
+                insert(ret, resp[i])
+            end
         end
     elseif has_value(true_resp_cmds, cmd) then
         ret = true
@@ -278,7 +285,9 @@ local function _read_reply(self, sock, ...)
 
     if val[1] == 'not_found' then
         ret = null
-    elseif val[2] then
+    elseif val[1] == 'client_error' then
+        return nil, val[2]
+    else
         ret = parse_response(cmd, val)
         -- ret = val[2]
     end
@@ -288,10 +297,15 @@ end
 
 
 local function _gen_req(args)
+    local nargs = #args
     local req = {}
 
-    for i = 1, #args do
+    for i = 1, nargs do
         local arg = args[i]
+
+        if type(arg) ~= "string" then
+            arg = tostring(arg)
+        end
 
         if arg then
             insert(req, len(arg))
