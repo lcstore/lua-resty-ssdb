@@ -901,3 +901,56 @@ hexists animals dog: false
 hexists animals dog: true
 --- no_error_log
 [error]
+
+
+
+=== TEST 16: pipeline
+--- http_config eval: $::HttpConfig
+--- config
+    location /t {
+        content_by_lua '
+            local ssdb = require "resty.ssdb"
+            local db = ssdb:new()
+            local cjson = require "cjson"
+
+            db:set_timeout(1000) -- 1 sec
+
+            local ok, err = db:connect("127.0.0.1", $TEST_NGINX_SSDB_PORT)
+            if not ok then
+                ngx.say("failed to connect: ", err)
+                return
+            end
+
+            ok, err = db:flushdb()
+            if not ok then
+                ngx.say("failed to flush all: ", err)
+                return
+            end
+
+
+            db:init_pipeline()
+            db:set("cat", "Marry")
+            db:set("horse", "Bob")
+            db:get("cat")
+            db:get("horse")
+            db:hset("hash1", "k1", "v1")
+            db:hset("hash1", "k2", "v2")
+            db:hget("hash1", "k1")
+            db:hgetall("hash1")
+
+            local res, err = db:commit_pipeline()
+            if not res then
+               ngx.say("failed to commit the pipelined requests: ", err)
+               return
+            end
+            ngx.say("pipeline response: ", cjson.encode(res))
+
+            db:close()
+        ';
+    }
+--- request
+GET /t
+--- response_body
+pipeline response: [true,true,"Marry","Bob",true,true,"v1",{"k1":"v1","k2":"v2"}]
+--- no_error_log
+[error]
