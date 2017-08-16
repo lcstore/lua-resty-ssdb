@@ -25,9 +25,37 @@ if not ok or type(new_tab) ~= "function" then
 end
 
 
+-- string split
+-- can be replace by `ngx.re.split` in `nginx-lua-module==0.12`
+function split(s, delimiter)
+    local result = {}
+    local from = 1
+    local delim_from, delim_to = string.find(s, delimiter, from)
+    while delim_from do
+        table.insert(result, string.sub(s, from, delim_from - 1))
+        from = delim_to + 1
+        delim_from, delim_to = string.find(s, delimiter, from)
+    end
+    table.insert(result, string.sub(s, from))
+    return result
+end
+
+
+-- check if *val* in *tab*
+function has_value (tab, val)
+    for index, value in ipairs (tab) do
+        if value == val then
+            return true
+        end
+    end
+    return false
+end
+
+
 local _M = new_tab(0, 128)
 
 _M._VERSION = '0.03'
+
 
 local commands = {
     -- Server
@@ -74,6 +102,48 @@ local commands = {
 }
 
 
+-- START command groups
+-- response: 1
+local bool_resp_cmds = {'set', 'setnx', 'del', 'exists', 'expire', 'setbit',
+                        'getbit', 'hset', 'hdel', 'hexists', 'zset', 'zdel',
+                        'zexists'}
+
+-- response string
+local raw_resp_cmds = {'get', 'hget', 'getset', 'substr', 'qfront', 'qback', 'qget'}
+
+-- response int
+local int_resp_cmds = {'incr', 'decr', 'multi_set', 'multi_del', 'ttl', 'countbit',
+                       'strlen', 'hincr', 'hdecr', 'hsize', 'hclear', 'multi_hset',
+                       'multi_hdel', 'zincr', 'zdecr', 'zsize', 'zclear', 'multi_zset',
+                       'multi_zdel', 'zget', 'zrank', 'zrrank', 'zcount', 'zsum',
+                       'zavg', 'zremrangebyrank', 'zremrangebyscore', 'qsize',
+                       'qclear', 'qpush_back', 'qpush_front', 'qtrim_back',
+                       'qtrim_front'}
+
+-- response float
+local float_resp_cmds = {"zavg"}
+
+-- response table: >>{"k1":"1","k2":"2"}
+local dict_resp_cmds = {'multi_get', 'multi_hget', 'hgetall', 'multi_zget'}
+
+-- reponse array: >>[{"k1":"v1"},{"k2":"v2"}]
+local order_dict_resp_cmds = {'scan', 'rscan', 'hscan', 'hrscan'}
+
+-- response array: >>[{"k1":1},{"k2":2},{"k3":3}]
+local int_order_dict_resp_cmds = {'zscan', 'zrscan', 'zrange', 'zrrange'}
+
+-- response table: >>{"k1":"1","k2":"2"}
+local int_dict_resp_cmds = {"multi_zget"}
+
+local raw_all_resp_cmds = {'keys', 'hkeys', 'hlist', 'hrlist', 'zkeys', 'zlist',
+                           'zrlist', 'qlist', 'qrlist', 'qrange', 'qslice',
+                           'qpop_back', 'qpop_front'}
+
+local true_resp_cmds = {"qset"} -- always true
+
+-- END command groups --
+
+
 local mt = { __index = _M }
 
 
@@ -116,7 +186,7 @@ function _M.get_reused_times(self)
 end
 
 
-function close(self)
+local function close(self)
     local sock = self.sock
     if not sock then
         return nil, "not initialized"
@@ -127,9 +197,59 @@ end
 _M.close = close
 
 
-local function _read_reply(self, sock)
+local function parse_response(cmd, resp)
+    local ret
+
+    if has_value(dict_resp_cmds, cmd) then
+        ret = {}
+        for i = 2, #resp, 2 do
+            ret[resp[i]] = resp[i+1]
+        end
+    elseif has_value(int_dict_resp_cmds, cmd) then
+        ret = {}
+        for i = 2, #resp, 2 do
+            ret[resp[i]] = tonumber(resp[i+1])
+        end
+    elseif has_value(int_resp_cmds, cmd) or has_value(float_resp_cmds, cmd) then
+        ret = tonumber(resp[2])
+    elseif has_value(bool_resp_cmds, cmd) then
+        ret = not not resp[2]
+    elseif has_value(order_dict_resp_cmds, cmd) then
+        ret = {}
+        for i = 2, #resp, 2 do
+            local t = {}
+            t[resp[i]]=resp[i+1]
+            table.insert(ret, t)
+        end
+    elseif has_value(int_order_dict_resp_cmds, cmd) then
+        ret = {}
+        for i = 2, #resp, 2 do
+            local t = {}
+            t[resp[i]]=tonumber(resp[i+1])
+            table.insert(ret, t)
+        end
+    elseif has_value(raw_all_resp_cmds, cmd) then
+        ret = {}
+        for i = 2, #resp do
+            table.insert(ret, resp[i])
+        end
+    elseif has_value(int_dict_resp_cmds, cmd) then
+
+    elseif has_value(true_resp_cmds, cmd) then
+        ret = true
+    else
+        ret = resp[2]
+    end
+
+    return ret
+end
+
+
+local function _read_reply(self, sock, ...)
+    local args = {...}
     local val = {}
     local ret = nil
+    local cmd = args[1]
 
     while true do
         -- read block size
@@ -153,14 +273,11 @@ local function _read_reply(self, sock)
         end
     end
 
-    for index, v in pairs(val) do
-        ngx.log(ngx.ERR, index .. ":" .. v)
-    end
-
     if val[1] == 'not_found' then
         ret = null
     elseif val[2] then
-        ret = val[2]
+        ret = parse_response(cmd, val)
+        -- ret = val[2]
     end
 
     return ret
@@ -193,7 +310,6 @@ end
 
 local function _do_cmd(self, ...)
     local args = {...}
-
     local sock = rawget(self, "sock")
     if not sock then
         return nil, "not initialized"
@@ -215,7 +331,7 @@ local function _do_cmd(self, ...)
         return nil, err
     end
 
-    return  _read_reply(self, sock)
+    return  _read_reply(self, sock, args[1])
 end
 
 
@@ -246,7 +362,7 @@ function _M.connect(self, host, port, auth, ...)
 		if not bytes then
             return nil, err
         end
-		local err = _read_reply(sock)
+		local err = _read_reply(self, sock)
         if err and err ~= '1'  then
 		    return nil, err
 		end
@@ -321,7 +437,7 @@ function _M.commit_pipeline(self)
 
     local vals = {}
     for i = 1, #reqs do
-        local res, err = _read_reply(sock)
+        local res, err = _read_reply(self, sock)
         if res then
             insert(vals, res)
 
