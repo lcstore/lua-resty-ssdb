@@ -233,8 +233,6 @@ local function parse_response(cmd, resp)
         for i = 2, #resp do
             table.insert(ret, resp[i])
         end
-    elseif has_value(int_dict_resp_cmds, cmd) then
-
     elseif has_value(true_resp_cmds, cmd) then
         ret = true
     else
