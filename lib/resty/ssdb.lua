@@ -27,17 +27,6 @@ if not ok or type(new_tab) ~= "function" then
 end
 
 
--- check if *val* in *tab*
-local function has_value (tab, val)
-    for _, value in ipairs (tab) do
-        if value == val then
-            return true
-        end
-    end
-    return false
-end
-
-
 local _M = new_tab(0, 128)
 
 _M._VERSION = '0.03'
@@ -88,50 +77,138 @@ local commands = {
 }
 
 
--- START command groups
+local function toboolean (resp)
+    if resp[2] ~= "0" then
+        return true
+    else
+        return false
+    end
+end
+
+
+local function totable (resp)
+    local ret = new_tab(0, math.floor(#resp/2))
+    for i = 2, #resp, 2 do
+        ret[resp[i]] = resp[i+1]
+    end
+    return ret
+end
+
+
+local function tonumber_table (resp)
+    local ret = new_tab(0, math.floor(#resp/2))
+    for i = 2, #resp, 2 do
+        ret[resp[i]] = tonumber(resp[i+1])
+    end
+    return ret
+end
+
+
+local function toordered_table (resp)
+    local ret = new_tab(0, math.floor(#resp/2))
+    for i = 2, #resp, 2 do
+        local t = {}
+        t[resp[i]]=resp[i+1]
+        insert(ret, t)
+    end
+    return ret
+end
+
+
+local function tonumber_ordered_table (resp)
+    local ret = new_tab(0, math.floor(#resp/2))
+    for i = 2, #resp, 2 do
+        local t = {}
+        t[resp[i]]=tonumber(resp[i+1])
+        insert(ret, t)
+    end
+    return ret
+end
+
+
+local function toarray (resp)
+    local ret = new_tab(0, math.floor(#resp))
+    if resp ~= nil then
+        for i = 2, #resp do
+            insert(ret, resp[i])
+        end
+    end
+    return ret
+end
+
+
+local resp_parser = {
+    boolean = toboolean,
+    string = function (resp) return tostring(resp[2]) end,
+    number = function(resp) return tonumber(resp[2]) end,
+    table = totable,
+    number_table = tonumber_table,
+    ordered_table = toordered_table,
+    number_ordered_table = tonumber_ordered_table,
+    array = toarray,
+    always_true = function () return true end
+}
+
+
 --[[ command group info from python ssdb:
-https://github.com/wrongwaycn/ssdb-py/blob/ce7b1542f0faa06fe71a60c667fe15992af0f621/ssdb/client.py#L132-L183
+    https://github.com/wrongwaycn/ssdb-py/blob/ce7b1542f0faa06fe71a60c667fe15992af0f621/ssdb/client.py#L132-L183
 --]]
 
--- response: 1
-local bool_resp_cmds = {'set', 'setnx', 'del', 'exists', 'expire', 'setbit',
-                        'getbit', 'hset', 'hdel', 'hexists', 'zset', 'zdel',
-                        'zexists'}
 
--- response string
-local raw_resp_cmds = {'get', 'hget', 'getset', 'substr', 'qfront', 'qback', 'qget'}
+local resp_parser_map = {
+    boolean = {
+        'set', 'setnx', 'del', 'exists', 'expire', 'setbit',
+        'getbit', 'hset', 'hdel', 'hexists', 'zset', 'zdel',
+        'zexists'
+    },
+    string = {
+        'get', 'hget', 'getset', 'substr', 'qfront', 'qback', 'qget'
+    },
+    number = {
+        'incr', 'decr', 'multi_set', 'multi_del', 'ttl', 'countbit',
+        'strlen', 'hincr', 'hdecr', 'hsize', 'hclear', 'multi_hset',
+        'multi_hdel', 'zincr', 'zdecr', 'zsize', 'zclear', 'multi_zset',
+        'multi_zdel', 'zget', 'zrank', 'zrrank', 'zcount', 'zsum',
+        'zavg', 'zremrangebyrank', 'zremrangebyscore', 'qsize',
+        'qclear', 'qpush_back', 'qpush_front', 'qtrim_back',
+        'qtrim_front', 'zavg'
+    },
+    table = {
+        -- response table: >>{"k1":"1","k2":"2"}
+        'multi_get', 'multi_hget', 'hgetall', 'multi_zget'
+    },
+    number_table = {
+        -- response table: >>{"k1":1,"k2":2}
+        "multi_zget"
+    },
+    ordered_table = {
+        -- reponse array: >>[{"k1":"v1"},{"k2":"v2"}]
+        'scan', 'rscan', 'hscan', 'hrscan'
+    },
+    number_ordered_table = {
+        -- response array: >>[{"k1":1},{"k2":2},{"k3":3}]
+        'zscan', 'zrscan', 'zrange', 'zrrange'
+    },
+    array = {
+        'keys', 'hkeys', 'hlist', 'hrlist', 'zkeys', 'zlist',
+        'zrlist', 'qlist', 'qrlist', 'qrange', 'qslice',
+        'qpop_back', 'qpop_front'
+    },
+    always_true = {
+        'qset'
+    }
+}
 
--- response int
-local int_resp_cmds = {'incr', 'decr', 'multi_set', 'multi_del', 'ttl', 'countbit',
-                       'strlen', 'hincr', 'hdecr', 'hsize', 'hclear', 'multi_hset',
-                       'multi_hdel', 'zincr', 'zdecr', 'zsize', 'zclear', 'multi_zset',
-                       'multi_zdel', 'zget', 'zrank', 'zrrank', 'zcount', 'zsum',
-                       'zavg', 'zremrangebyrank', 'zremrangebyscore', 'qsize',
-                       'qclear', 'qpush_back', 'qpush_front', 'qtrim_back',
-                       'qtrim_front'}
 
--- response float
-local float_resp_cmds = {"zavg"}
-
--- response table: >>{"k1":"1","k2":"2"}
-local dict_resp_cmds = {'multi_get', 'multi_hget', 'hgetall', 'multi_zget'}
-
--- reponse array: >>[{"k1":"v1"},{"k2":"v2"}]
-local order_dict_resp_cmds = {'scan', 'rscan', 'hscan', 'hrscan'}
-
--- response array: >>[{"k1":1},{"k2":2},{"k3":3}]
-local int_order_dict_resp_cmds = {'zscan', 'zrscan', 'zrange', 'zrrange'}
-
--- response table: >>{"k1":"1","k2":"2"}
-local int_dict_resp_cmds = {"multi_zget"}
-
-local raw_all_resp_cmds = {'keys', 'hkeys', 'hlist', 'hrlist', 'zkeys', 'zlist',
-                           'zrlist', 'qlist', 'qrlist', 'qrange', 'qslice',
-                           'qpop_back', 'qpop_front'}
-
-local true_resp_cmds = {"qset"} -- always true
-
--- END command groups --
+local function build_parser_map ()
+    local resp_map = new_tab(0, 95)
+    for dtype, cmds in pairs(resp_parser_map) do
+        for _, cmd in pairs(cmds) do
+            resp_map[cmd] = resp_parser[dtype]
+        end
+    end
+    return resp_map
+end
 
 
 local mt = { __index = _M }
@@ -187,61 +264,16 @@ end
 _M.close = close
 
 
-local function parse_response(cmd, resp)
-    local ret
+local cmd_table = build_parser_map()
 
-    -- ngx.log(ngx.ERR, cmd)
+
+local function parse_response (cmd, resp)
     if cmd == "flushdb" then
-        ret = true
-    elseif has_value(dict_resp_cmds, cmd) then
-        ret = {}
-        for i = 2, #resp, 2 do
-            ret[resp[i]] = resp[i+1]
-        end
-    elseif has_value(int_dict_resp_cmds, cmd) then
-        ret = {}
-        for i = 2, #resp, 2 do
-            ret[resp[i]] = tonumber(resp[i+1])
-        end
-    elseif has_value(int_resp_cmds, cmd) or has_value(float_resp_cmds, cmd) then
-        ret = tonumber(resp[2])
-    elseif has_value(bool_resp_cmds, cmd) then
-        if resp[2] == "0" then
-            ret = false
-        else
-            ret = true
-        end
-    elseif has_value(order_dict_resp_cmds, cmd) then
-        ret = {}
-        for i = 2, #resp, 2 do
-            local t = {}
-            t[resp[i]]=resp[i+1]
-            insert(ret, t)
-        end
-    elseif has_value(int_order_dict_resp_cmds, cmd) then
-        ret = {}
-        for i = 2, #resp, 2 do
-            local t = {}
-            t[resp[i]]=tonumber(resp[i+1])
-            insert(ret, t)
-        end
-    elseif has_value(raw_all_resp_cmds, cmd) then
-        -- ngx.log(ngx.ERR, cmd .. "IN RAW ALL RESP")
-        ret = {}
-        if resp ~= nil then
-            for i = 2, #resp do
-                insert(ret, resp[i])
-            end
-        end
-    elseif has_value(true_resp_cmds, cmd) then
-        ret = true
-    elseif has_value(raw_resp_cmds, cmd) then
-        ret = resp[2]
-    else
-        ret = resp[2]
+        return true
     end
-
-    return ret
+    -- json = require "cjson"
+    -- ngx.log(ngx.ERR, json.encode(cmd_table))
+    return cmd_table[cmd](resp)
 end
 
 
