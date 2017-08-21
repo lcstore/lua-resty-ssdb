@@ -29,7 +29,7 @@ end
 
 local _M = new_tab(0, 128)
 
-_M._VERSION = '0.03'
+_M._VERSION = '0.04'
 
 
 local commands = {

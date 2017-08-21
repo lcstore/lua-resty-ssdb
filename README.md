@@ -361,6 +361,7 @@ Please report bugs or submit patches by
 
 Author
 ======
+Risent Zhang <shengqi542@gmail.com>
 
 LazyZhu (lazyzhu.com) <billfzhu@gmail.com>
 
