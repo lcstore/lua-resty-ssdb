@@ -29,7 +29,7 @@ end
 
 local _M = new_tab(0, 128)
 
-_M._VERSION = '0.04'
+_M._VERSION = '0.05'
 
 
 local commands = {
@@ -157,7 +157,7 @@ local resp_parser = {
 
 local resp_parser_map = {
     boolean = {
-        'set', 'setnx', 'del', 'exists', 'expire', 'setbit',
+        'set','setx', 'setnx', 'del', 'exists', 'expire', 'setbit',
         'getbit', 'hset', 'hdel', 'hexists', 'zset', 'zdel',
         'zexists'
     },
