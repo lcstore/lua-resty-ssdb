@@ -1,3 +1,4 @@
+-- Copyright (C) 2019 lezo (lezomao.com)
 -- Copyright (C) 2017 Risent Zhang (risent.net)
 -- Copyright (C) 2013 LazyZhu (lazyzhu.com)
 -- Copyright (C) 2013 IdeaWu (ideawu.com)
@@ -29,7 +30,7 @@ end
 
 local _M = new_tab(0, 128)
 
-_M._VERSION = '0.05'
+_M._VERSION = '0.0.1'
 
 
 local commands = {
