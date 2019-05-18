@@ -2,6 +2,8 @@ lezo changed
 =====
 + No body  maintain the old version!!!
 + clone and fix some bug.
++ v0.02 fix zpop_front&zpop_back response parser
++ v1.0.0 change version to be newest
 
 RISENT changed
 =====

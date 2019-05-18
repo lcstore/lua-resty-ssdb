@@ -24,61 +24,60 @@ local rawget = rawget
 
 local ok, new_tab = pcall(require, "table.new")
 if not ok or type(new_tab) ~= "function" then
-    new_tab = function (narr, nrec) return {} end
+    new_tab = function(narr, nrec) return {} end
 end
 
 
 local _M = new_tab(0, 128)
 
-_M._VERSION = '0.0.1'
+_M._VERSION = '1.0.0'
 
 
 local commands = {
     -- Server
-    "auth",                 "dbsize",              "flushdb",
+    "auth", "dbsize", "flushdb",
     "info",
 
     -- Key Value
-    "set",                  "setx",                "setnx",
-    "expire",               "ttl",                 "get",
-    "getset",               "del",                 "incr",
-    "exists",               "getbit",              "setbit",
-    "bitcount",             "countbit",            "substr",
-    "strlen",               "keys",                "rkeys",
-    "scan",                 "rscan",               "multi_set",
-    "multi_get",            "multi_del",
+    "set", "setx", "setnx",
+    "expire", "ttl", "get",
+    "getset", "del", "incr",
+    "exists", "getbit", "setbit",
+    "bitcount", "countbit", "substr",
+    "strlen", "keys", "rkeys",
+    "scan", "rscan", "multi_set",
+    "multi_get", "multi_del",
 
     -- hashmap
-    "hset",                 "hget",                "hdel",
-    "hincr",                "hexists",             "hsize",
-    "hlist",                "hrlist",              "hkeys",
-    "hgetall",              "hscan",               "hrscan",
-    "hclear",               --[[ "multi_hset", ]]  "multi_hget",
+    "hset", "hget", "hdel",
+    "hincr", "hexists", "hsize",
+    "hlist", "hrlist", "hkeys",
+    "hgetall", "hscan", "hrscan",
+    "hclear", --[[ "multi_hset", ]] "multi_hget",
     "multi_hdel",
 
     -- Sorted Set
-    "zset",                 "zget",                "zdel",
-    "zincr",                "zexists",             "zsize",
-    "zlist",                "zrlist",              "zkeys",
-    "zscan",                "zrscan",              "zrank",
-    "zrrank",               "zrange",              "zrrange",
-    "zclear",               "zcount",              "zsum",
-    "zavg",                 "zremrangebyrank",     "zremrangebyscore",
-    "zpop_front",           "zpop_back",           --[[ "multi_zset"]]
-    "multi_zget",           "multi_zdel",
+    "zset", "zget", "zdel",
+    "zincr", "zexists", "zsize",
+    "zlist", "zrlist", "zkeys",
+    "zscan", "zrscan", "zrank",
+    "zrrank", "zrange", "zrrange",
+    "zclear", "zcount", "zsum",
+    "zavg", "zremrangebyrank", "zremrangebyscore",
+    "zpop_front", "zpop_back", --[[ "multi_zset"]]
+    "multi_zget", "multi_zdel",
 
     -- List
-    "qpush_front",          "qpush_back",          "qpop_front",
-    "qpop_back",            "qpush",               "qpop",
-    "qfront",               "qback",               "qsize",
-    "qclear",               "qget",                "qset",
-    "qrange",               "qslice",              "qtrim_front",
-    "qtrim_back",           "qlist",               "qrlist"
-
+    "qpush_front", "qpush_back", "qpop_front",
+    "qpop_back", "qpush", "qpop",
+    "qfront", "qback", "qsize",
+    "qclear", "qget", "qset",
+    "qrange", "qslice", "qtrim_front",
+    "qtrim_back", "qlist", "qrlist"
 }
 
 
-local function toboolean (resp)
+local function toboolean(resp)
     if resp[2] ~= "0" then
         return true
     else
@@ -87,47 +86,47 @@ local function toboolean (resp)
 end
 
 
-local function totable (resp)
-    local ret = new_tab(0, math.floor(#resp/2))
+local function totable(resp)
+    local ret = new_tab(0, math.floor(#resp / 2))
     for i = 2, #resp, 2 do
-        ret[resp[i]] = resp[i+1]
+        ret[resp[i]] = resp[i + 1]
     end
     return ret
 end
 
 
-local function tonumber_table (resp)
-    local ret = new_tab(0, math.floor(#resp/2))
+local function tonumber_table(resp)
+    local ret = new_tab(0, math.floor(#resp / 2))
     for i = 2, #resp, 2 do
-        ret[resp[i]] = tonumber(resp[i+1])
+        ret[resp[i]] = tonumber(resp[i + 1])
     end
     return ret
 end
 
 
-local function toordered_table (resp)
-    local ret = new_tab(0, math.floor(#resp/2))
+local function toordered_table(resp)
+    local ret = new_tab(0, math.floor(#resp / 2))
     for i = 2, #resp, 2 do
         local t = {}
-        t[resp[i]]=resp[i+1]
+        t[resp[i]] = resp[i + 1]
         insert(ret, t)
     end
     return ret
 end
 
 
-local function tonumber_ordered_table (resp)
-    local ret = new_tab(0, math.floor(#resp/2))
+local function tonumber_ordered_table(resp)
+    local ret = new_tab(0, math.floor(#resp / 2))
     for i = 2, #resp, 2 do
         local t = {}
-        t[resp[i]]=tonumber(resp[i+1])
+        t[resp[i]] = tonumber(resp[i + 1])
         insert(ret, t)
     end
     return ret
 end
 
 
-local function toarray (resp)
+local function toarray(resp)
     local ret = new_tab(0, math.floor(#resp))
     if resp ~= nil then
         for i = 2, #resp do
@@ -140,14 +139,14 @@ end
 
 local resp_parser = {
     boolean = toboolean,
-    string = function (resp) return tostring(resp[2]) end,
+    string = function(resp) return tostring(resp[2]) end,
     number = function(resp) return tonumber(resp[2]) end,
     table = totable,
     number_table = tonumber_table,
     ordered_table = toordered_table,
     number_ordered_table = tonumber_ordered_table,
     array = toarray,
-    always_true = function () return true end
+    always_true = function() return true end
 }
 
 
@@ -158,7 +157,7 @@ local resp_parser = {
 
 local resp_parser_map = {
     boolean = {
-        'set','setx', 'setnx', 'del', 'exists', 'expire', 'setbit',
+        'set', 'setx', 'setnx', 'del', 'exists', 'expire', 'setbit',
         'getbit', 'hset', 'hdel', 'hexists', 'zset', 'zdel',
         'zexists'
     },
@@ -193,7 +192,7 @@ local resp_parser_map = {
     array = {
         'keys', 'hkeys', 'hlist', 'hrlist', 'zkeys', 'zlist',
         'zrlist', 'qlist', 'qrlist', 'qrange', 'qslice',
-        'qpop_back', 'qpop_front'
+        'qpop_back', 'qpop_front', 'zpop_front', 'zpop_back'
     },
     always_true = {
         'qset'
@@ -201,7 +200,7 @@ local resp_parser_map = {
 }
 
 
-local function build_parser_map ()
+local function build_parser_map()
     local resp_map = new_tab(0, 95)
     for dtype, cmds in pairs(resp_parser_map) do
         for _, cmd in pairs(cmds) do
@@ -262,13 +261,14 @@ local function close(self)
 
     return sock:close()
 end
+
 _M.close = close
 
 
 local cmd_table = build_parser_map()
 
 
-local function parse_response (cmd, resp)
+local function parse_response(cmd, resp)
     if cmd == "flushdb" then
         return true
     end
@@ -279,7 +279,7 @@ end
 
 
 local function _read_reply(self, sock, ...)
-    local args = {...}
+    local args = { ... }
     local val = {}
     local ret
     local cmd = args[1]
@@ -287,7 +287,7 @@ local function _read_reply(self, sock, ...)
     while true do
         -- read block size
         local line, err, partial = sock:receive()
-        if not line or len(line)==0 then
+        if not line or len(line) == 0 then
             -- packet end
             break
         end
@@ -349,7 +349,7 @@ end
 
 
 local function _do_cmd(self, ...)
-    local args = {...}
+    local args = { ... }
     local sock = rawget(self, "sock")
     if not sock then
         return nil, "not initialized"
@@ -372,7 +372,7 @@ local function _do_cmd(self, ...)
         return nil, err
     end
 
-    return  _read_reply(self, sock, cmd)
+    return _read_reply(self, sock, cmd)
 end
 
 
@@ -382,9 +382,9 @@ for i = 1, #commands do
     local cmd = commands[i]
 
     _M[cmd] =
-        function (self, ...)
-            return _do_cmd(self, cmd, ...)
-        end
+    function(self, ...)
+        return _do_cmd(self, cmd, ...)
+    end
 end
 
 function _M.connect(self, host, port, auth, ...)
@@ -393,27 +393,27 @@ function _M.connect(self, host, port, auth, ...)
         return nil, "not initialized"
     end
     local ok, err = sock:connect(host, port)
-	if not ok then
-	    return nil, err
-	end
-	-- make auth
-	if auth then
-        local req = {"4", "\n", "auth", "\n", len(auth), "\n", auth, "\n", "\n"}
-		local bytes, err = sock:send(req)
-		if not bytes then
+    if not ok then
+        return nil, err
+    end
+    -- make auth
+    if auth then
+        local req = { "4", "\n", "auth", "\n", len(auth), "\n", auth, "\n", "\n" }
+        local bytes, err = sock:send(req)
+        if not bytes then
             return nil, err
         end
-		local err = _read_reply(self, sock)
-        if err and err ~= '1'  then
-		    return nil, err
-		end
-	end
-	return ok, err
+        local err = _read_reply(self, sock)
+        if err and err ~= '1' then
+            return nil, err
+        end
+    end
+    return ok, err
 end
 
 
 function _M.multi_hset(self, hashname, ...)
-    local args = {...}
+    local args = { ... }
     if #args == 1 then
         local t = args[1]
         local array = {}
@@ -431,7 +431,7 @@ end
 
 
 function _M.multi_zset(self, keyname, ...)
-    local args = {...}
+    local args = { ... }
     if #args == 1 then
         local t = args[1]
         local array = {}
@@ -508,28 +508,30 @@ end
 
 
 function _M.add_commands(...)
-    local cmds = {...}
+    local cmds = { ... }
     for i = 1, #cmds do
         local cmd = cmds[i]
         _M[cmd] =
-            function (self, ...)
-                return _do_cmd(self, cmd, ...)
-            end
+        function(self, ...)
+            return _do_cmd(self, cmd, ...)
+        end
     end
 end
 
 
-setmetatable(_M, {__index = function(self, cmd)
-                      local method =
-                          function (self, ...)
-                              return _do_cmd(self, cmd, ...)
-                          end
+setmetatable(_M, {
+    __index = function(self, cmd)
+        local method =
+        function(self, ...)
+            return _do_cmd(self, cmd, ...)
+        end
 
-                      -- cache the lazily generated method in our
-                      -- module table
-                      _M[cmd] = method
-                      return method
-end})
+        -- cache the lazily generated method in our
+        -- module table
+        _M[cmd] = method
+        return method
+    end
+})
 
 
 return _M
